@@ -1,0 +1,146 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   GhostMind — Design Tokens
+   Aesthetic: spectral, oracular, terminal séance
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  /* Surfaces — deep void cool grays */
+  --gm-void:       oklch(0.11 0.012 264);
+  --gm-bg:        oklch(0.135 0.014 264);
+  --gm-surface-1: oklch(0.175 0.015 264);
+  --gm-surface-2: oklch(0.215 0.016 264);
+  --gm-surface-3: oklch(0.255 0.018 264);
+  --gm-border:    oklch(0.30 0.018 264);
+  --gm-border-soft: oklch(0.24 0.016 264);
+  --gm-border-strong: oklch(0.42 0.022 264);
+
+  /* Foreground — warm parchment */
+  --gm-fg:        oklch(0.945 0.012 85);
+  --gm-fg-dim:   oklch(0.82 0.014 85);
+  --gm-muted:     oklch(0.62 0.012 264);
+  --gm-muted-2:   oklch(0.46 0.012 264);
+
+  /* Spectral accents */
+  --gm-phosphor:  oklch(0.88 0.17 158);   /* ghostly green — affirmative, alive */
+  --gm-phosphor-dim: oklch(0.55 0.12 158);
+  --gm-ember:     oklch(0.82 0.14 65);    /* warm amber — pot / value */
+  --gm-spectral:  oklch(0.74 0.15 295);   /* pale violet — séance accent */
+  --gm-crimson:   oklch(0.68 0.21 22);    /* incorrect / no */
+
+  /* Semantic */
+  --gm-yes: var(--gm-phosphor);
+  --gm-no: oklch(0.70 0.025 85);
+  --gm-correct: var(--gm-phosphor);
+  --gm-incorrect: var(--gm-crimson);
+
+  /* Type */
+  --gm-font-display: "Spectral", "Cormorant Garamond", "EB Garamond", Georgia, serif;
+  --gm-font-sans: "DM Sans", "Geist", "Funnel Sans", system-ui, sans-serif;
+  --gm-font-mono: "JetBrains Mono", "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Radius */
+  --gm-r-xs: 4px;
+  --gm-r-sm: 8px;
+  --gm-r-md: 12px;
+  --gm-r-lg: 18px;
+
+  /* Shadow / glow */
+  --gm-glow-phosphor: 0 0 24px -4px oklch(0.88 0.17 158 / 0.45),
+                      0 0 1px oklch(0.88 0.17 158 / 0.7) inset;
+  --gm-glow-ember:    0 0 24px -4px oklch(0.82 0.14 65 / 0.4);
+  --gm-glow-spectral: 0 0 28px -2px oklch(0.74 0.15 295 / 0.45);
+}
+
+/* Base styles */
+body {
+  font-family: var(--gm-font-sans);
+  color: var(--gm-fg);
+  background: var(--gm-bg);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+
+.mono { font-family: var(--gm-font-mono); font-feature-settings: "zero", "ss02"; }
+.display { font-family: var(--gm-font-display); font-weight: 400; letter-spacing: -0.01em; }
+.display-i { font-family: var(--gm-font-display); font-weight: 400; font-style: italic; }
+
+/* Subtle phosphor noise overlay used on hero surfaces */
+.gm-noise {
+  position: relative;
+  isolation: isolate;
+}
+.gm-noise::before {
+  content: "";
+  position: absolute; inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, oklch(0.88 0.17 158 / 0.08) 50%, transparent 51%),
+    radial-gradient(1px 1px at 80% 70%, oklch(0.74 0.15 295 / 0.06) 50%, transparent 51%),
+    radial-gradient(1px 1px at 50% 20%, oklch(0.82 0.14 65 / 0.06) 50%, transparent 51%),
+    radial-gradient(circle at 50% 50%, oklch(0.30 0.05 264 / 0.4), transparent 60%);
+  background-size: 8px 8px, 12px 12px, 14px 14px, 100% 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+.gm-noise > * { position: relative; z-index: 1; }
+
+/* Spirit board dot grid */
+.gm-grid-bg {
+  background-image:
+    radial-gradient(oklch(0.30 0.018 264) 1px, transparent 1.2px);
+  background-size: 24px 24px;
+  background-position: 0 0;
+}
+
+/* ── Oracle orb animations ─────────────────────────────── */
+
+@keyframes gmOrbBreath {
+  0%, 100% { transform: scale(1);    opacity: 0.22; filter: blur(6px); }
+  50%      { transform: scale(1.10); opacity: 0.34; filter: blur(7px); }
+}
+@keyframes gmOrbBreathStrong {
+  0%, 100% { transform: scale(1);    opacity: 0.30; filter: blur(7px); }
+  50%      { transform: scale(1.18); opacity: 0.55; filter: blur(10px); }
+}
+@keyframes gmOrbSpin {
+  to { transform: rotate(360deg); }
+}
+@keyframes gmOrbSpinFast {
+  to { transform: rotate(-360deg); }
+}
+@keyframes gmOrbBob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+@keyframes gmBlink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95%, 97%      { transform: scaleY(0.08); }
+}
+@keyframes gmThinkDot {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  50%      { opacity: 1;    transform: translateY(-2px); }
+}
+@keyframes gmFlash {
+  0%   { opacity: 0; transform: scale(0.6); }
+  40%  { opacity: 1; transform: scale(1.05); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+@keyframes gmPulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.9); }
+  50%      { opacity: 1;   transform: scale(1.1); }
+}
+
+.gm-orb-halo        { animation: gmOrbBreath 4.2s ease-in-out infinite; transform-origin: center; }
+.gm-orb-halo-strong { animation: gmOrbBreathStrong 2.4s ease-in-out infinite; transform-origin: center; }
+.gm-orb-ring-slow   { animation: gmOrbSpin 80s linear infinite; transform-origin: 100px 100px; }
+.gm-orb-ring-fast   { animation: gmOrbSpinFast 14s linear infinite; transform-origin: 100px 100px; }
+.gm-orb-bob         { animation: gmOrbBob 5.2s ease-in-out infinite; }
+.gm-orb-blink       { animation: gmBlink 5.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.gm-orb-blink.delay { animation-delay: 0.08s; }
+.gm-orb-think-d1    { animation: gmThinkDot 1.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.gm-orb-think-d2    { animation: gmThinkDot 1.2s ease-in-out 0.2s infinite; transform-box: fill-box; transform-origin: center; }
+.gm-orb-think-d3    { animation: gmThinkDot 1.2s ease-in-out 0.4s infinite; transform-box: fill-box; transform-origin: center; }
+.gm-orb-flash       { animation: gmFlash 1.4s ease-out 1; transform-origin: center; }
