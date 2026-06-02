@@ -1,1 +1,12 @@
 /old/
+node_modules/
+.env
+.env.*
+!.env.example
+clite-secrets.json
+mcp-server/clite-secrets.json
+mcp-server/game-keys.json
+game-keys.json
+receipt-debug.json
+.DS_Store
+scripts
