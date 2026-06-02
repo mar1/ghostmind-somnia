@@ -59,22 +59,39 @@ interface ILLMInferenceAgent {
         string[] calldata messages,
         bool chainOfThought
     ) external returns (string memory response);
+
+    struct OnchainTool {
+        string signature;
+        string description;
+    }
+
+    function inferToolsChat(
+        string[] calldata roles,
+        string[] calldata messages,
+        string[] calldata mcpServerUrls,
+        OnchainTool[] calldata onchainTools,
+        uint256 maxIterations,
+        bool chainOfThought
+    ) external returns (
+        string memory finishReason,
+        string memory response,
+        string[] memory updatedRoles,
+        string[] memory updatedMessages,
+        string[] memory pendingToolCallIds,
+        bytes[] memory pendingToolCalls
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────
-// GhostMind V2 — History-Based Architecture
-//
-// KEY INSIGHT: The LLM doesn't need to reveal the character name.
-// Instead, we pass the full Q&A history with each call, and the
-// LLM stays consistent with its previous answers.
+// GhostMind V2 — inferToolsChat + MCP Privacy
 //
 // FLOW:
-//   1. createGame() → LLM picks a character silently, responds "ready"
-//   2. askQuestion() → Pass history + question, LLM answers yes/no
-//   3. finalGuess() → Pass history + guess, LLM answers correct/incorrect
+//   1. createGame() → LLM calls ghostmind MCP tool (init) → "ready"
+//   2. askQuestion() → LLM calls ghostmind MCP tool (question) → "yes"/"no"
+//   3. finalGuess() → LLM calls ghostmind MCP tool (guess) → "correct"/"incorrect"
 //
-// The character name is NEVER stored on-chain or revealed in prompts.
-// The LLM is the source of truth for the character's identity.
+// Character is stored privately in MCP server, never exposed in receipts.
+// MCP server uses external LLM (Claude/GPT) for accurate answers.
 // ─────────────────────────────────────────────────────────────────
 
 contract GhostMindV2 {
@@ -89,21 +106,17 @@ contract GhostMindV2 {
     uint256 public constant PROTOCOL_FEE_BPS = 300; // 3%
 
     address public immutable feeRecipient;
+    string public mcpServerUrl; // MCP server URL (set by owner)
 
     // ── System Prompt ─────────────────────────────────────────────
-    // Embedded in chat history as first message with role "system"
+    // Instructs LLM to use the ghostmind MCP tool for all game actions
 
     string private constant SYSTEM_PROMPT =
-        "You are the game master of a Guess Who guessing game. "
-        "CRITICAL RULES: "
-        "1. At game start, you pick ONE famous real person and remember them for the ENTIRE conversation. "
-        "2. You must be 100% consistent with this character across ALL responses. "
-        "3. For YES/NO questions: Answer with EXACTLY 'yes' or 'no' (lowercase, no punctuation, no extra text). "
-        "4. For GUESSES: Answer with EXACTLY 'correct' or 'incorrect' (lowercase, no punctuation, no extra text). "
-        "5. Be historically accurate with your answers. "
-        "6. Accept reasonable name variations for guesses (partial names, different spellings). "
-        "YOUR RESPONSE MUST BE EXACTLY ONE WORD: 'yes', 'no', 'correct', 'incorrect', or 'ready'. "
-        "DO NOT add any explanation, punctuation, or additional text.";
+        "You are a game assistant for GhostMind. "
+        "You MUST use the ghostmind tool for ALL actions. "
+        "NEVER answer questions yourself - always call the ghostmind tool. "
+        "After calling the tool, respond to the user with EXACTLY what the tool tells you to say. "
+        "Do not add any extra text or explanation.";
 
     // ── Game State ────────────────────────────────────────────────
 
@@ -179,8 +192,17 @@ contract GhostMindV2 {
 
     // ── Constructor ───────────────────────────────────────────────
 
-    constructor(address _feeRecipient) {
+    address public owner;
+
+    constructor(address _feeRecipient, string memory _mcpServerUrl) {
         feeRecipient = _feeRecipient;
+        mcpServerUrl = _mcpServerUrl;
+        owner = msg.sender;
+    }
+
+    function setMcpServerUrl(string memory _url) external {
+        require(msg.sender == owner, "Only owner");
+        mcpServerUrl = _url;
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -204,20 +226,31 @@ contract GhostMindV2 {
         g.chatRoles.push("system");
         g.chatMessages.push(SYSTEM_PROMPT);
 
+        string memory diffStr = _difficultyToString(difficulty);
         string memory initMessage = string(abi.encodePacked(
-            _getDifficultyHint(difficulty),
-            "Pick your secret character now. Remember who you picked. ",
-            "Confirm by responding with exactly: ready"
+            "Start a new GhostMind game. ",
+            "Call the ghostmind tool with action='init', gameId='",
+            _uint2str(gameId),
+            "', difficulty='",
+            diffStr,
+            "'. Then respond with exactly what the tool tells you."
         ));
         g.chatRoles.push("user");
         g.chatMessages.push(initMessage);
 
-        // Build inferChat payload
+        // Build inferToolsChat payload with MCP
+        string[] memory mcpUrls = new string[](1);
+        mcpUrls[0] = mcpServerUrl;
+        ILLMInferenceAgent.OnchainTool[] memory emptyTools = new ILLMInferenceAgent.OnchainTool[](0);
+
         bytes memory payload = abi.encodeWithSelector(
-            ILLMInferenceAgent.inferChat.selector,
+            ILLMInferenceAgent.inferToolsChat.selector,
             g.chatRoles,
             g.chatMessages,
-            false  // chainOfThought: false to hide character
+            mcpUrls,
+            emptyTools,
+            5,      // maxIterations
+            false   // chainOfThought
         );
 
         uint256 requestId = PLATFORM.createRequest{value: LLM_DEPOSIT}(
@@ -250,12 +283,10 @@ contract GhostMindV2 {
             return;
         }
 
-        // Save assistant response to chat history (should be "ready")
-        string memory response = abi.decode(responses[0].result, (string));
+        // Store only "ready" on-chain — character stays implicit (Somnia receipt may still show raw LLM text)
         g.chatRoles.push("assistant");
-        g.chatMessages.push(response);
+        g.chatMessages.push("ready");
 
-        // LLM responded "ready" - game is now active
         g.phase = GamePhase.Active;
         emit GameReady(gameId);
     }
@@ -282,18 +313,30 @@ contract GhostMindV2 {
 
         // Add question to chat history
         string memory questionPrompt = string(abi.encodePacked(
+            "Player asks: \"",
             question,
-            " Answer with exactly 'yes' or 'no'."
+            "\"\nCall the ghostmind tool with action='question', gameId='",
+            _uint2str(gameId),
+            "', question='",
+            question,
+            "'. Then respond with exactly what the tool tells you."
         ));
         g.chatRoles.push("user");
         g.chatMessages.push(questionPrompt);
 
-        // Build inferChat payload with full history
+        // Build inferToolsChat payload with MCP
+        string[] memory mcpUrls = new string[](1);
+        mcpUrls[0] = mcpServerUrl;
+        ILLMInferenceAgent.OnchainTool[] memory emptyTools = new ILLMInferenceAgent.OnchainTool[](0);
+
         bytes memory payload = abi.encodeWithSelector(
-            ILLMInferenceAgent.inferChat.selector,
+            ILLMInferenceAgent.inferToolsChat.selector,
             g.chatRoles,
             g.chatMessages,
-            false  // chainOfThought: false
+            mcpUrls,
+            emptyTools,
+            5,      // maxIterations
+            false   // chainOfThought
         );
 
         uint256 requestId = PLATFORM.createRequest{value: LLM_DEPOSIT}(
@@ -329,11 +372,11 @@ contract GhostMindV2 {
         }
 
         string memory rawAnswer = abi.decode(responses[0].result, (string));
-        string memory answer = _normalizeResponse(rawAnswer);
+        string memory answer = _coerceYesNo(rawAnswer);
 
-        // Save to chat history
+        // Chat replay uses only yes/no so long LLM replies do not poison later turns
         g.chatRoles.push("assistant");
-        g.chatMessages.push(rawAnswer);
+        g.chatMessages.push(answer);
 
         // Store in QA history for frontend display
         g.history.push(QA({
@@ -374,17 +417,30 @@ contract GhostMindV2 {
 
         // Add guess to chat history
         string memory guessPrompt = string(abi.encodePacked(
-            "My guess is: ", guess, ". Answer with exactly 'correct' or 'incorrect'."
+            "Player guesses: \"",
+            guess,
+            "\"\nCall the ghostmind tool with action='guess', gameId='",
+            _uint2str(gameId),
+            "', guess='",
+            guess,
+            "'. Then respond with exactly what the tool tells you."
         ));
         g.chatRoles.push("user");
         g.chatMessages.push(guessPrompt);
 
-        // Build inferChat payload with full history
+        // Build inferToolsChat payload with MCP
+        string[] memory mcpUrls = new string[](1);
+        mcpUrls[0] = mcpServerUrl;
+        ILLMInferenceAgent.OnchainTool[] memory emptyTools = new ILLMInferenceAgent.OnchainTool[](0);
+
         bytes memory payload = abi.encodeWithSelector(
-            ILLMInferenceAgent.inferChat.selector,
+            ILLMInferenceAgent.inferToolsChat.selector,
             g.chatRoles,
             g.chatMessages,
-            false  // chainOfThought: false
+            mcpUrls,
+            emptyTools,
+            5,      // maxIterations
+            false   // chainOfThought
         );
 
         uint256 requestId = PLATFORM.createRequest{value: LLM_DEPOSIT}(
@@ -423,11 +479,10 @@ contract GhostMindV2 {
         }
 
         string memory rawResult = abi.decode(responses[0].result, (string));
-        string memory result = _normalizeResponse(rawResult);
+        string memory result = _coerceGuessResult(rawResult);
 
-        // Save to chat history
         g.chatRoles.push("assistant");
-        g.chatMessages.push(rawResult);
+        g.chatMessages.push(result);
 
         bool isCorrect = _startsWith(result, "correct");
 
@@ -589,14 +644,69 @@ contract GhostMindV2 {
     // Utilities
     // ─────────────────────────────────────────────────────────────
 
-    function _getDifficultyHint(Difficulty difficulty) internal pure returns (string memory) {
-        if (difficulty == Difficulty.Easy) {
-            return "DIFFICULTY: Pick a VERY FAMOUS person that everyone knows (major celebrity, world leader, legendary historical figure). ";
-        } else if (difficulty == Difficulty.Medium) {
-            return "DIFFICULTY: Pick a MODERATELY FAMOUS person (known in their field but not a household name). ";
-        } else {
-            return "DIFFICULTY: Pick an OBSCURE person (lesser-known historical figure, niche celebrity, or someone most people wouldn't recognize). ";
+    function _difficultyToString(Difficulty d) internal pure returns (string memory) {
+        if (d == Difficulty.Easy) return "easy";
+        if (d == Difficulty.Medium) return "medium";
+        return "hard";
+    }
+
+    /// @dev Collapse LLM output to yes/no for on-chain chat replay and transcript.
+    function _coerceYesNo(string memory raw) internal pure returns (string memory) {
+        string memory s = _normalizeResponse(raw);
+        if (_startsWith(s, "yes")) return "yes";
+        if (_startsWith(s, "no")) return "no";
+        uint256 lastYes = _lastWordIndex(s, "yes");
+        uint256 lastNo = _lastWordIndex(s, "no");
+        if (lastYes != type(uint256).max && lastNo == type(uint256).max) return "yes";
+        if (lastNo != type(uint256).max && lastYes == type(uint256).max) return "no";
+        if (lastYes != type(uint256).max && lastNo != type(uint256).max) {
+            return lastYes > lastNo ? "yes" : "no";
         }
+        return s;
+    }
+
+    function _coerceGuessResult(string memory raw) internal pure returns (string memory) {
+        string memory s = _normalizeResponse(raw);
+        if (_startsWith(s, "correct")) return "correct";
+        if (_startsWith(s, "incorrect")) return "incorrect";
+        uint256 lastCorrect = _lastWordIndex(s, "correct");
+        uint256 lastIncorrect = _lastWordIndex(s, "incorrect");
+        if (lastCorrect != type(uint256).max && lastIncorrect == type(uint256).max) return "correct";
+        if (lastIncorrect != type(uint256).max && lastCorrect == type(uint256).max) return "incorrect";
+        if (lastCorrect != type(uint256).max && lastIncorrect != type(uint256).max) {
+            return lastCorrect > lastIncorrect ? "correct" : "incorrect";
+        }
+        return s;
+    }
+
+    /// @dev Last start index of `word` as a whole word, or type(uint256).max if absent.
+    function _lastWordIndex(string memory s, string memory word) internal pure returns (uint256) {
+        bytes memory b = bytes(s);
+        bytes memory w = bytes(word);
+        if (w.length == 0 || b.length < w.length) return type(uint256).max;
+        uint256 last = type(uint256).max;
+        for (uint256 i = 0; i + w.length <= b.length; i++) {
+            bool isMatch = true;
+            for (uint256 j = 0; j < w.length; j++) {
+                bytes1 c = b[i + j];
+                bytes1 p = w[j];
+                if (c >= 0x41 && c <= 0x5A) c = bytes1(uint8(c) + 32);
+                if (p >= 0x41 && p <= 0x5A) p = bytes1(uint8(p) + 32);
+                if (c != p) {
+                    isMatch = false;
+                    break;
+                }
+            }
+            if (!isMatch) continue;
+            bool leftOk = i == 0 || !_isAlphaNum(b[i - 1]);
+            bool rightOk = i + w.length == b.length || !_isAlphaNum(b[i + w.length]);
+            if (leftOk && rightOk) last = i;
+        }
+        return last;
+    }
+
+    function _isAlphaNum(bytes1 c) internal pure returns (bool) {
+        return (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A);
     }
 
     function _normalizeResponse(string memory str) internal pure returns (string memory) {
