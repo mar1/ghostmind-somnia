@@ -8,34 +8,34 @@
 
 ## Concept
 
-A game master deploys a round and seeds a prize pool. At init, the Somnia LLM Agent (Qwen3-30B) picks a secret famous character and confirms with `"ready"` — the name is never stored on-chain. Anyone can ask yes/no questions for a fee that grows the pot, or attempt to name the character. Every question and every guess is resolved on-chain by the LLM, with outputs constrained via `allowedValues` for validator consensus.
+A game master deploys a round and seeds a prize pool. At init, the Somnia LLM Agent picks a character via **`hash-hex-name`** (`keccak256("GhostMind.v1", gameId)` → 8 hex chars) and responds **`ready`** only. The contract stores **`ready`** in chat history, not the name. Anyone can ask yes/no questions or guess; every turn replays full **`inferChat`** history.
 
-**Key innovation:** The character name is never stored or revealed in prompts. **Consistency comes from on-chain Q&A history** replayed into each LLM call — not from seed-based determinism (tested and unreliable with Qwen3-30B).
+**Key innovation:** Roster-free seed in the init prompt; **consistency within a game** comes from **`inferChat` history** on-chain.
 
 **Pitch line:** The contract is the public memory of the game; the Somnia agent is the game master that must stay consistent with that memory.
 
 ---
 
-## Architecture (V2 — History-Based)
+## Architecture (V2 — inferChat + hash-hex-name)
 
-### Why not seed determinism?
+### Character seed
 
-Early prototypes passed `gameId` as a seed and asked the LLM to always map the same seed → same character. **Empirical result:** Qwen3-30B does not reliably pick the same person across independent calls for the same seed.
+`HEX = first 8 hex chars of keccak256("GhostMind.v1", gameId)` — computed on-chain in `createGame`. Init asks the model to pick from HEX and reply **`ready`** only; on-chain `chatMessages` stores **`ready`** (raw Somnia receipt may still show more).
 
-**V2 fix:** Each game is a single narrative thread. The contract stores every Q&A on-chain and injects the full history into every subsequent `inferString` call. Within one game, questions and guesses stay aligned; across games, the same seed may yield different characters — that is acceptable.
+Within one game, Q&A uses **`inferChat`** with full `chatRoles` / `chatMessages` replayed each call.
 
 ### Flow
 
 ```
 createGame(gameFee)
   → GM pays LLM_DEPOSIT (0.24) + prizePool → pot
-  → LLM init: pick secret character, respond "ready" (allowedValues: ["ready"])
-  → phase = Active (character exists only in LLM context + future history)
+  → inferChat init: GAME_ID + HEX → LLM responds "ready" (name not stored on-chain)
+  → phase = Active
 
 askQuestion(gameId, "Is this person French?")
   → player pays LLM_DEPOSIT + gameFee (gameFee → pot)
-  → prompt = full history[] + current question
-  → LLM answers "yes" or "no" (allowedValues)
+  → inferChat with full chat history + question
+  → LLM answers "yes" or "no"
   → stored in history[], emitted on-chain
 
 finalGuess(gameId, "Napoleon Bonaparte")
@@ -209,21 +209,22 @@ Anything passed to the LLM is public (events, receipts). You cannot hide a strin
 
 Re-derive character from `gameId` on every call without storing the name. **Does not work reliably** with Qwen3-30B across independent requests.
 
-### V2 approach (current) — on-chain history
+### V2 approach (current) — hash-hex-name + inferChat history
 
 | Concern | How V2 handles it |
 |---------|-------------------|
-| Name never on-chain | Never stored; only implicit in LLM at init |
-| Cross-call consistency | Contract replays `history[]` in each prompt |
+| Character pick | `HEX` from `keccak256("GhostMind.v1", gameId)` in init prompt |
+| Name on-chain | Not in storage; first assistant message is full name (in chat arrays / receipts) |
+| Cross-call consistency | `inferChat` replays `chatRoles` / `chatMessages` each turn |
 | Guess validation | LLM sees history + guess → `correct` / `incorrect` |
-| Consensus | `allowedValues`: `ready`, `yes`/`no`, `correct`/`incorrect` |
 | Wrong guess context | Appended as `GUESS: {name}` / `incorrect` in history |
 
 ### Remaining risks (honest)
 
 - LLM may contradict earlier answers (mitigated by history, not provable)
-- Init only returns `"ready"` — character choice is opaque but must be stable for that game thread
-- Each guess costs full `LLM_DEPOSIT` (0.24)
+- Same `gameId` may pick different celebrities across separate games (hash-hex is a hint, not a proof)
+- Factual yes/no errors still possible
+- Each action costs full `LLM_DEPOSIT` (0.24)
 
 ### Future fallback (if consistency fails in production)
 
@@ -269,6 +270,7 @@ function resetStuckGame(uint256 gameId) external  // after 30 min in Processing
 
 function getGame(uint256 gameId) external view returns (...)
 function getHistory(uint256 gameId) external view returns (QA[] memory)
+function getChatHistory(uint256 gameId) external view returns (string[] roles, string[] messages)
 function getActionCost(uint256 gameId) external view returns (uint256 questionCost, uint256 guessCost)
 // Both costs = LLM_DEPOSIT + gameFee
 ```
@@ -281,35 +283,23 @@ function handleQuestionResponse(...) external
 function handleGuessResponse(...) external
 ```
 
-### System prompt (shared across init / question / guess)
+### inferChat (all turns)
 
-```
-You are the game master of a Guess Who guessing game.
-At game start, you picked ONE famous real person.
-Stay consistent with ALL previous answers in the history.
-For YES/NO: answer based on true facts about your character.
-For GUESSES: accept reasonable name variations; answer correct/incorrect.
-```
+**System:** deterministic pick rules + stay on character + yes/no + guess format.
 
-### Per-call prompts
-
-**Init:**
+**Init user message:**
 ```
-prompt: "Game ID: {gameId}. Pick your secret character now. Confirm ready."
-allowedValues: ["ready"]
+GAME_ID = {gameId}
+HEX = {hex8}
+
+TASK: Map HEX to a famous real person. Commit mentally. Do NOT write their name. Reply exactly: ready
 ```
 
-**Question:**
-```
-prompt: "## Previous Q&A:\n{history}\n## Current Question:\n{question}\nAnswer only yes or no."
-allowedValues: ["yes", "no"]
-```
+**On-chain assistant message after init:** always `ready` (contract does not store the raw name).
 
-**Guess:**
-```
-prompt: "## Previous Q&A:\n{history}\n## Player's Guess:\n\"{guess}\"\n..."
-allowedValues: ["correct", "incorrect"]
-```
+**Question user message:** `QUESTION: {q}\n\nAnswer with ONLY "yes" or "no". Stay consistent with prior answers.`
+
+**Guess user message:** `My guess is: {name}. Answer with exactly 'correct' or 'incorrect'.`
 
 ---
 
@@ -318,11 +308,15 @@ allowedValues: ["correct", "incorrect"]
 ### Primary (V2 flow)
 
 ```bash
-# Interactive full game (history in prompts) — validates guess flow
-PRIVATE_KEY=0x... node test-history-v2.mjs
+npm install
+export PRIVATE_KEY=0x...
+export CONTRACT=0x48d6c7b4b69665524372686dF984e3f7Ee243952
 
-# Receipt / inferChat experiments (optional)
-PRIVATE_KEY=0x... SEED=42 node test-inferchat-v2.mjs
+npm run cli -- create --pot 2.4 --fee 0.18
+npm run cli -- wait 1
+npm run cli -- ask 1 "Is this person male?"
+npm run cli -- guess 1 "Albert Einstein"
+npm run cli -- demo
 ```
 
 ### Legacy / research
@@ -401,16 +395,10 @@ const subscription = await sdk.watch({
 ## Files
 
 ```
-GhostMindV2.sol              — Canonical contract (history-based)
-test-history-v2.mjs          — Full V2 flow against contract or platform
-test-inferchat-v2.mjs        — inferChat / history experiments
-test-determinism-v2.mjs      — Seed tests (documents V1 dead-end)
-debug-*.mjs                  — Receipts & event debugging
-
-AkinatorReverseOpenWorld.sol — Legacy V1 (seed + hash guess)
-test-determinism.mjs         — Legacy seed tests
-test-guess.mjs               — Legacy seed + guess CLI
+contracts/GhostMindV2.sol    — Canonical contract (inferChat + hash-hex-name)
+test-consistency.mjs         — Manual inferChat consistency experiments
 GHOSTMIND.md                 — This file
+RESEARCH_FINDINGS.md         — Architecture research notes
 ```
 
 ---
