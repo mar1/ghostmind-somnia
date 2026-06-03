@@ -3,11 +3,11 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { parseEther } from "viem";
-import { useAccount } from "wagmi";
+import { useAccount, useReadContract, useChainId } from "wagmi";
 import { AppChrome } from "@/components/AppChrome";
 import { Button, TextField, Icon, Badge, GhostOrb, FrameCard } from "@/components/ui";
 import { useCreateGame } from "@/hooks";
-import { Difficulty, LLM_DEPOSIT } from "@/contracts";
+import { Difficulty, LLM_DEPOSIT, ghostMindAbi, getContractAddress } from "@/contracts";
 
 const difficultyOptions = [
   {
@@ -72,7 +72,15 @@ function CostRow({
 
 export default function SummonPage() {
   const router = useRouter();
+  const chainId = useChainId();
+  const contractAddress = getContractAddress(chainId);
   const { isConnected } = useAccount();
+  const { data: gameCounter } = useReadContract({
+    address: contractAddress,
+    abi: ghostMindAbi,
+    functionName: "gameCounter",
+  });
+  const nextGameId = gameCounter !== undefined ? gameCounter + 1n : 1n;
   const [poolSeed, setPoolSeed] = useState("2.40");
   const [questionFee, setQuestionFee] = useState("0.18");
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.Easy);
@@ -289,11 +297,15 @@ export default function SummonPage() {
               </Button>
             </div>
             <div style={{ fontSize: 12, color: "var(--gm-muted-2)", maxWidth: 480, lineHeight: 1.5 }}>
-              The contract sends {LLM_DEPOSIT} STT to the Somnia inference agent. Once it answers{" "}
+              The contract sends {LLM_DEPOSIT} STT to the Somnia agent. It calls the{" "}
               <span className="mono" style={{ color: "var(--gm-phosphor)" }}>
-                &quot;ready&quot;
-              </span>
-              , your round is open to all players.
+                MCP server
+              </span>{" "}
+              which picks a character and responds{" "}
+              <span className="mono" style={{ color: "var(--gm-phosphor)" }}>
+                ready
+              </span>{" "}
+              — the name never appears on-chain.
             </div>
           </div>
         </div>
@@ -321,7 +333,7 @@ export default function SummonPage() {
             <GhostOrb size={210} state={isLoading ? "thinking" : "ready"} label={isLoading ? "summoning..." : "awaiting summons"} />
           </div>
 
-          {/* The init prompt that will be sent */}
+          {/* MCP privacy architecture info */}
           <FrameCard padding={18}>
             <div
               className="mono"
@@ -333,7 +345,7 @@ export default function SummonPage() {
                 marginBottom: 10,
               }}
             >
-              Init prompt · inferChat
+              Privacy · MCP Architecture
             </div>
             <pre
               className="mono"
@@ -345,21 +357,18 @@ export default function SummonPage() {
                 whiteSpace: "pre-wrap",
               }}
             >
-              {`> role: system
-You are the game master of a Guess Who
-guessing game. Pick ONE famous real person.
-Stay consistent with previous answers.
-Response must be exactly one word.
+              {`Game #${nextGameId}
 
-> role: user
-${
-  difficulty === Difficulty.Easy
-    ? "DIFFICULTY: Pick a VERY FAMOUS person\nthat everyone knows."
-    : difficulty === Difficulty.Medium
-      ? "DIFFICULTY: Pick a MODERATELY FAMOUS\nperson (known in their field)."
-      : "DIFFICULTY: Pick an OBSCURE person\n(lesser-known historical figure)."
-}
-Confirm by responding with exactly: ready`}
+The Oracle picks a character and stores
+it privately on the MCP server.
+
+All on-chain responses are limited to:
+  → "ready" (game initialized)
+  → "yes" / "no" (question answers)
+  → "correct" / "incorrect" (guesses)
+
+The character name never appears
+in any transaction or receipt.`}
             </pre>
           </FrameCard>
 

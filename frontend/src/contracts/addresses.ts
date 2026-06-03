@@ -2,7 +2,7 @@ import { somniaTestnet } from "@/wagmi";
 
 // Contract addresses per chain
 export const CONTRACT_ADDRESSES: Record<number, `0x${string}`> = {
-  [somniaTestnet.id]: "0xF3065903e3521f470F6851aE740D64fb8e3A26fE",
+  [somniaTestnet.id]: "0x48d6c7b4b69665524372686dF984e3f7Ee243952",
 };
 
 export function getContractAddress(chainId: number): `0x${string}` {

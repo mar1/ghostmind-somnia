@@ -1,0 +1,20 @@
+{
+  "name": "ghostmind-mcp-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "clite": "node clite-server.mjs",
+    "clite:dev": "node --watch clite-server.mjs",
+    "bot": "node ../bot/game-bot.mjs",
+    "bot:create": "node ../bot/game-bot.mjs create"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.38.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.18.2",
+    "viem": "^2.52.0"
+  }
+}
