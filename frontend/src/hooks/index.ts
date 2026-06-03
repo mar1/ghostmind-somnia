@@ -16,3 +16,5 @@ export { useCreateGame } from "./useCreateGame";
 export { useAskQuestion } from "./useAskQuestion";
 export { useFinalGuess } from "./useFinalGuess";
 export { useGameEvents, useNewGameEvents } from "./useGameEvents";
+export { useLeaderboard, usePlayerStats, useGlobalStats } from "./useLeaderboard";
+export type { PlayerStats, LeaderboardEntry } from "./useLeaderboard";

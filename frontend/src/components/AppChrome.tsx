@@ -15,6 +15,7 @@ const tabs = [
   { name: "Summon", href: "/summon" },
   { name: "Active Round", href: "/game" },
   { name: "Reveal", href: "/reveal" },
+  { name: "Rankings", href: "/leaderboard" },
 ];
 
 export function AppChrome({ children }: AppChromeProps) {

@@ -169,6 +169,18 @@ contract GhostMindV2 {
 
     uint256 public gameCounter;
 
+    // ── Player Stats (Leaderboard) ───────────────────────────────
+
+    struct PlayerStats {
+        uint256 questionsAsked;
+        uint256 correctGuesses;
+        uint256 incorrectGuesses;
+    }
+
+    mapping(address => PlayerStats) public playerStats;
+    address[] public knownPlayers;
+    mapping(address => bool) private isKnownPlayer;
+
     // ── Events ────────────────────────────────────────────────────
 
     event GameCreated(uint256 indexed gameId, address indexed gameMaster, uint256 pot, uint256 gameFee, Difficulty difficulty);
@@ -387,6 +399,9 @@ contract GhostMindV2 {
 
         emit QuestionAnswered(gameId, g.pendingQuestion, answer, g.questionCount);
 
+        // Record stats for leaderboard
+        _recordQuestion(g.pendingPlayer);
+
         g.phase = GamePhase.Active;
 
         // Clear pending
@@ -489,6 +504,9 @@ contract GhostMindV2 {
         emit GuessResult(gameId, g.pendingPlayer, g.pendingQuestion, isCorrect);
 
         if (isCorrect) {
+            // Record correct guess for leaderboard
+            _recordCorrectGuess(g.pendingPlayer);
+
             // WINNER! Refund the gameFee they sent
             (bool refundOk, ) = g.pendingPlayer.call{value: g.gameFee}("");
             if (!refundOk) {} // Continue anyway
@@ -496,6 +514,9 @@ contract GhostMindV2 {
             g.winningGuess = g.pendingQuestion;
             _endGameWinner(g, gameId, g.pendingPlayer);
         } else {
+            // Record incorrect guess for leaderboard
+            _recordIncorrectGuess(g.pendingPlayer);
+
             // Incorrect - add gameFee to pot
             g.pot += g.gameFee;
 
@@ -638,6 +659,53 @@ contract GhostMindV2 {
         Game storage g = games[gameId];
         questionCost = LLM_DEPOSIT + g.gameFee;
         guessCost = LLM_DEPOSIT + g.gameFee; // Now requires LLM call
+    }
+
+    // ── Leaderboard View Functions ───────────────────────────────
+
+    function getPlayerStats(address player) external view returns (PlayerStats memory) {
+        return playerStats[player];
+    }
+
+    function getKnownPlayersCount() external view returns (uint256) {
+        return knownPlayers.length;
+    }
+
+    function getKnownPlayers(uint256 offset, uint256 limit) external view returns (address[] memory) {
+        uint256 end = offset + limit;
+        if (end > knownPlayers.length) end = knownPlayers.length;
+        if (offset >= knownPlayers.length) return new address[](0);
+        address[] memory result = new address[](end - offset);
+        for (uint256 i = offset; i < end; i++) {
+            result[i - offset] = knownPlayers[i];
+        }
+        return result;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Internal - Player Stats
+    // ─────────────────────────────────────────────────────────────
+
+    function _recordPlayer(address player) internal {
+        if (!isKnownPlayer[player]) {
+            isKnownPlayer[player] = true;
+            knownPlayers.push(player);
+        }
+    }
+
+    function _recordQuestion(address player) internal {
+        _recordPlayer(player);
+        playerStats[player].questionsAsked++;
+    }
+
+    function _recordCorrectGuess(address player) internal {
+        _recordPlayer(player);
+        playerStats[player].correctGuesses++;
+    }
+
+    function _recordIncorrectGuess(address player) internal {
+        _recordPlayer(player);
+        playerStats[player].incorrectGuesses++;
     }
 
     // ─────────────────────────────────────────────────────────────

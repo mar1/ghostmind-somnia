@@ -142,6 +142,53 @@ export const ghostMindAbi = [
     stateMutability: "view",
   },
 
+  // ─── Leaderboard Functions ────────────────────────────────
+  {
+    type: "function",
+    name: "playerStats",
+    inputs: [{ name: "player", type: "address" }],
+    outputs: [
+      { name: "questionsAsked", type: "uint256" },
+      { name: "correctGuesses", type: "uint256" },
+      { name: "incorrectGuesses", type: "uint256" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getPlayerStats",
+    inputs: [{ name: "player", type: "address" }],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "questionsAsked", type: "uint256" },
+          { name: "correctGuesses", type: "uint256" },
+          { name: "incorrectGuesses", type: "uint256" },
+        ],
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getKnownPlayersCount",
+    inputs: [],
+    outputs: [{ type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getKnownPlayers",
+    inputs: [
+      { name: "offset", type: "uint256" },
+      { name: "limit", type: "uint256" },
+    ],
+    outputs: [{ type: "address[]" }],
+    stateMutability: "view",
+  },
+
   // ─── Events ──────────────────────────────────────────────
   {
     type: "event",
