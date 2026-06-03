@@ -24,6 +24,8 @@ app.use(express.json());
 const PORT = process.env.PORT || 3001;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const ADMIN_SECRET = process.env.ADMIN_SECRET;
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STORAGE LAYER (Redis with in-memory fallback)
@@ -523,23 +525,82 @@ app.get('/health', async (req, res) => {
   res.json({
     status: 'ok',
     version: '2.1.0',
+    env: NODE_ENV,
     storage: useRedis ? 'redis' : 'memory',
     games: gameCount,
-    llm: ANTHROPIC_API_KEY ? 'anthropic' : OPENAI_API_KEY ? 'openai' : 'none'
+    llm: ANTHROPIC_API_KEY ? 'anthropic' : OPENAI_API_KEY ? 'openai' : 'none',
+    adminProtected: !!ADMIN_SECRET
   });
 });
 
-app.get('/admin/games', async (req, res) => {
-  // WARNING: Exposes secrets! Protect in production!
+// ═══════════════════════════════════════════════════════════════════════════
+// ADMIN ENDPOINTS (Protected)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Admin authentication middleware
+function requireAdmin(req, res, next) {
+  // In production, always require ADMIN_SECRET
+  if (NODE_ENV === 'production' && !ADMIN_SECRET) {
+    return res.status(503).json({
+      error: 'Admin endpoints disabled',
+      message: 'ADMIN_SECRET not configured in production'
+    });
+  }
+
+  // If ADMIN_SECRET is set, require Bearer token
+  if (ADMIN_SECRET) {
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith('Bearer ')) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Missing Authorization: Bearer <token>'
+      });
+    }
+
+    const token = auth.slice(7); // Remove 'Bearer '
+    if (token !== ADMIN_SECRET) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Invalid admin token'
+      });
+    }
+  }
+
+  // In development without ADMIN_SECRET, allow access (with warning)
+  if (!ADMIN_SECRET && NODE_ENV !== 'production') {
+    console.warn('⚠️  Admin endpoint accessed without ADMIN_SECRET (dev mode)');
+  }
+
+  next();
+}
+
+app.get('/admin/games', requireAdmin, async (req, res) => {
   const list = await GameStore.getAll();
-  res.json(list);
+  res.json({
+    count: list.length,
+    games: list
+  });
 });
 
-app.get('/admin/games/:gameId', async (req, res) => {
-  // WARNING: Exposes secret! Protect in production!
+app.get('/admin/games/:gameId', requireAdmin, async (req, res) => {
   const game = await GameStore.get(req.params.gameId);
   if (!game) return res.status(404).json({ error: 'Not found' });
   res.json({ gameId: req.params.gameId, ...game });
+});
+
+// Admin: manually delete a game
+app.delete('/admin/games/:gameId', requireAdmin, async (req, res) => {
+  const gameId = req.params.gameId;
+  const exists = await GameStore.has(gameId);
+  if (!exists) return res.status(404).json({ error: 'Not found' });
+
+  if (useRedis) {
+    await redis.del(`game:${gameId}`);
+  } else {
+    memoryGames.delete(gameId);
+  }
+
+  res.json({ success: true, deleted: gameId });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -568,11 +629,13 @@ app.listen(PORT, async () => {
 
 💾 Storage: ${useRedis ? 'Redis (Upstash) ✅ persistent' : '⚠️  In-Memory (data lost on restart)'}
 🤖 LLM: ${ANTHROPIC_API_KEY ? 'Anthropic Claude ✅' : OPENAI_API_KEY ? 'OpenAI GPT ✅' : '❌ NOT CONFIGURED'}
+🛡️  Admin: ${ADMIN_SECRET ? 'Protected ✅' : NODE_ENV === 'production' ? '❌ DISABLED (no secret)' : '⚠️  Open (dev mode)'}
+🌍 Env: ${NODE_ENV}
 
 📡 Endpoint: http://localhost:${PORT}/api/ghostmind
 🏥 Health:   http://localhost:${PORT}/health
 
-${!useRedis ? '💡 Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN for persistence\n' : ''}${!ANTHROPIC_API_KEY && !OPENAI_API_KEY ? '⚠️  Set ANTHROPIC_API_KEY or OPENAI_API_KEY for question answering!\n' : ''}
+${!useRedis ? '💡 Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN for persistence\n' : ''}${!ANTHROPIC_API_KEY && !OPENAI_API_KEY ? '⚠️  Set ANTHROPIC_API_KEY or OPENAI_API_KEY for question answering!\n' : ''}${!ADMIN_SECRET ? '💡 Set ADMIN_SECRET to protect /admin/* endpoints\n' : ''}
 Ready for Somnia inferToolsChat calls!
 `);
 });
