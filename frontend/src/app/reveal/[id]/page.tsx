@@ -5,8 +5,8 @@ import Link from "next/link";
 import { formatEther } from "viem";
 import { AppChrome } from "@/components/AppChrome";
 import { Button, Badge, Icon, GhostOrb, QARow, PhasePip, Wordmark } from "@/components/ui";
-import { useGameCreatedSeed, useGameFull, useGameHistory, useGameWonPrize } from "@/hooks";
-import { GamePhase } from "@/contracts";
+import { useGameCreatedSeed, useGameFull, useGameHistory, useGameWonPrize, useFinishedGames, useWikipediaInfo } from "@/hooks";
+import { GamePhase, difficultyLabels } from "@/contracts";
 import { formatStt, getPotDisplay } from "@/lib/pot";
 
 function formatAddr(addr: `0x${string}`): string {
@@ -69,6 +69,17 @@ export default function RevealPage() {
   const { history, isLoading: historyLoading } = useGameHistory(gameId);
   const { seed: initialSeedWei, isLoading: seedLoading } = useGameCreatedSeed(gameId);
   const { prize: prizePaidWei } = useGameWonPrize(gameId);
+  const { games: finishedGames } = useFinishedGames(50);
+
+  // Find prev/next finished games for navigation
+  const sortedFinished = [...finishedGames].sort((a, b) => Number(a.gameId - b.gameId));
+  const currentIndex = gameId ? sortedFinished.findIndex((g) => g.gameId === gameId) : -1;
+  const prevGame = currentIndex > 0 ? sortedFinished[currentIndex - 1] : null;
+  const nextGame = currentIndex < sortedFinished.length - 1 ? sortedFinished[currentIndex + 1] : null;
+
+  // Wikipedia info for the winning guess
+  const winningGuessForWiki = game?.winningGuess || undefined;
+  const { info: wikiInfo, isLoading: wikiLoading } = useWikipediaInfo(winningGuessForWiki);
 
   // Loading state
   if (gameLoading || !game) {
@@ -125,13 +136,35 @@ export default function RevealPage() {
         <div className="gm-grid-bg" style={{ position: "absolute", inset: 0, opacity: 0.35, pointerEvents: "none" }} />
 
         <div style={{ position: "relative", maxWidth: 1100, margin: "0 auto", padding: "40px 32px 56px" }}>
-          {/* Eyebrow */}
+          {/* Navigation + Eyebrow */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div
-              className="mono"
-              style={{ fontSize: 11, letterSpacing: "0.28em", textTransform: "uppercase", color: "var(--gm-ember)" }}
-            >
-              Round #{String(game.gameId).padStart(4, "0")} · {hasWinner ? "the ghost is named" : "time ran out"}
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <div style={{ display: "flex", gap: 6 }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!prevGame}
+                  onClick={() => prevGame && router.push(`/reveal/${prevGame.gameId}`)}
+                  style={{ opacity: prevGame ? 1 : 0.3 }}
+                >
+                  <Icon.chevron_left width={16} height={16} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={!nextGame}
+                  onClick={() => nextGame && router.push(`/reveal/${nextGame.gameId}`)}
+                  style={{ opacity: nextGame ? 1 : 0.3 }}
+                >
+                  <Icon.chevron_right width={16} height={16} />
+                </Button>
+              </div>
+              <div
+                className="mono"
+                style={{ fontSize: 11, letterSpacing: "0.28em", textTransform: "uppercase", color: "var(--gm-ember)" }}
+              >
+                Round #{String(game.gameId).padStart(4, "0")} · {difficultyLabels[game.difficulty]} · {hasWinner ? "the ghost is named" : "time ran out"}
+              </div>
             </div>
             <PhasePip phase="Finished" />
           </div>
@@ -207,6 +240,43 @@ export default function RevealPage() {
                   ? `Named after ${questionCount} questions${wrongGuessCount > 0 ? ` and ${wrongGuessCount} wrong guess${wrongGuessCount > 1 ? "es" : ""}` : ""}${correctGuessCount > 0 ? " before a correct final guess" : ""}. The pot, less a 3% offering, has been sent to the winner.`
                   : `The séance ended without a winner. The pot has been returned to the game master.`}
               </div>
+              {hasWinner && wikiInfo?.extract && (
+                <div
+                  style={{
+                    marginTop: 16,
+                    padding: "14px 16px",
+                    background: "var(--gm-surface-1)",
+                    border: "1px solid var(--gm-border-soft)",
+                    borderRadius: "var(--gm-r-md)",
+                    maxWidth: 520,
+                  }}
+                >
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 10,
+                      letterSpacing: "0.2em",
+                      textTransform: "uppercase",
+                      color: "var(--gm-muted)",
+                      marginBottom: 8,
+                    }}
+                  >
+                    Who was {wikiInfo.title}?
+                  </div>
+                  <p
+                    style={{
+                      fontSize: 13,
+                      color: "var(--gm-fg-dim)",
+                      lineHeight: 1.6,
+                      margin: 0,
+                    }}
+                  >
+                    {wikiInfo.extract.length > 300
+                      ? wikiInfo.extract.slice(0, 300).trim() + "..."
+                      : wikiInfo.extract}
+                  </p>
+                </div>
+              )}
               <div style={{ marginTop: 24, display: "flex", gap: 10 }}>
                 <Link href="/summon">
                   <Button variant="ember" size="lg" icon={<Icon.flame width={16} height={16} />}>
@@ -219,7 +289,53 @@ export default function RevealPage() {
               </div>
             </div>
             <div style={{ position: "relative", display: "grid", placeItems: "center" }}>
-              <GhostOrb size={240} state="revealing" label={hasWinner ? "unmasked" : "departed"} />
+              {hasWinner && wikiInfo?.thumbnail ? (
+                <div style={{ textAlign: "center" }}>
+                  <div
+                    style={{
+                      width: 200,
+                      height: 200,
+                      borderRadius: "50%",
+                      overflow: "hidden",
+                      border: "3px solid var(--gm-ember)",
+                      boxShadow: "0 0 40px oklch(0.82 0.14 65 / 0.3)",
+                    }}
+                  >
+                    <img
+                      src={wikiInfo.thumbnail}
+                      alt={wikiInfo.title}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                      }}
+                    />
+                  </div>
+                  {wikiInfo.pageUrl && (
+                    <a
+                      href={wikiInfo.pageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        marginTop: 12,
+                        fontSize: 11,
+                        color: "var(--gm-muted)",
+                        textDecoration: "none",
+                      }}
+                    >
+                      <Icon.external width={12} height={12} />
+                      Wikipedia
+                    </a>
+                  )}
+                </div>
+              ) : wikiLoading && hasWinner ? (
+                <GhostOrb size={200} state="thinking" label="fetching info..." />
+              ) : (
+                <GhostOrb size={240} state="revealing" label={hasWinner ? "unmasked" : "departed"} />
+              )}
             </div>
           </div>
 

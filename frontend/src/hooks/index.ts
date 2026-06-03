@@ -18,3 +18,6 @@ export { useFinalGuess } from "./useFinalGuess";
 export { useGameEvents, useNewGameEvents } from "./useGameEvents";
 export { useLeaderboard, usePlayerStats, useGlobalStats } from "./useLeaderboard";
 export type { PlayerStats, LeaderboardEntry } from "./useLeaderboard";
+
+export { useWikipediaInfo } from "./useWikipediaInfo";
+export type { WikipediaInfo } from "./useWikipediaInfo";
