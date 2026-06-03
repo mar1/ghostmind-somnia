@@ -120,13 +120,14 @@ contract GhostMindV2 {
     string public mcpServerUrl; // MCP server URL (set by owner)
 
     // ── System Prompt ─────────────────────────────────────────────
-    // Simple prompt - let the LLM discover the MCP tool naturally
+    // Explicit prompt - MUST use the MCP tool for every action
 
     string private constant SYSTEM_PROMPT =
-        "You are playing GhostMind, a guessing game. "
-        "Use the ghostmind tool to handle all game actions. "
-        "The tool knows the secret character - you do not. "
-        "After using the tool, respond with exactly what it tells you.";
+        "You are playing GhostMind. "
+        "IMPORTANT: You MUST call the ghostmind tool for EVERY question and guess. "
+        "NEVER answer from memory or context - ALWAYS use the tool. "
+        "The tool has the secret character - you do not know it. "
+        "After the tool responds, reply with exactly what it says.";
 
     // ── Game State ────────────────────────────────────────────────
 
@@ -250,10 +251,10 @@ contract GhostMindV2 {
 
         string memory diffStr = _difficultyToString(difficulty);
         string memory initMessage = string(abi.encodePacked(
-            "Start a new ",
-            diffStr,
-            " game with ID: ",
-            _uint2str(gameId)
+            "Use ghostmind tool. action: init, gameId: ",
+            _uint2str(gameId),
+            ", difficulty: ",
+            diffStr
         ));
         g.chatRoles.push("user");
         g.chatMessages.push(initMessage);
@@ -335,16 +336,17 @@ contract GhostMindV2 {
         g.pendingPlayer = msg.sender;
         g.pendingType = RequestType.Question;
 
-        // Add question to chat history
-        string memory questionPrompt = string(abi.encodePacked(
-            "Game ",
-            _uint2str(gameId),
-            ": Player asks \"",
-            question,
-            "\""
+        // Build FRESH context - don't send history so LLM must use tool
+        string[] memory freshRoles = new string[](2);
+        string[] memory freshMessages = new string[](2);
+
+        freshRoles[0] = "system";
+        freshMessages[0] = SYSTEM_PROMPT;
+
+        freshRoles[1] = "user";
+        freshMessages[1] = string(abi.encodePacked(
+            "Use ghostmind tool. gameId: ", _uint2str(gameId), ", question: \"", question, "\""
         ));
-        g.chatRoles.push("user");
-        g.chatMessages.push(questionPrompt);
 
         // Build inferToolsChat payload with MCP
         string[] memory mcpUrls = new string[](1);
@@ -353,8 +355,8 @@ contract GhostMindV2 {
 
         bytes memory payload = abi.encodeWithSelector(
             ILLMInferenceAgent.inferToolsChat.selector,
-            g.chatRoles,
-            g.chatMessages,
+            freshRoles,
+            freshMessages,
             mcpUrls,
             emptyTools,
             5,      // maxIterations
@@ -453,16 +455,17 @@ contract GhostMindV2 {
         g.pendingPlayer = msg.sender;
         g.pendingType = RequestType.Guess;
 
-        // Add guess to chat history
-        string memory guessPrompt = string(abi.encodePacked(
-            "Game ",
-            _uint2str(gameId),
-            ": Check if \"",
-            guess,
-            "\" is the secret character"
+        // Build FRESH context - don't send history so LLM must use tool
+        string[] memory freshRoles = new string[](2);
+        string[] memory freshMessages = new string[](2);
+
+        freshRoles[0] = "system";
+        freshMessages[0] = SYSTEM_PROMPT;
+
+        freshRoles[1] = "user";
+        freshMessages[1] = string(abi.encodePacked(
+            "Use ghostmind tool. gameId: ", _uint2str(gameId), ", guess: \"", guess, "\""
         ));
-        g.chatRoles.push("user");
-        g.chatMessages.push(guessPrompt);
 
         // Build inferToolsChat payload with MCP
         string[] memory mcpUrls = new string[](1);
@@ -471,8 +474,8 @@ contract GhostMindV2 {
 
         bytes memory payload = abi.encodeWithSelector(
             ILLMInferenceAgent.inferToolsChat.selector,
-            g.chatRoles,
-            g.chatMessages,
+            freshRoles,
+            freshMessages,
             mcpUrls,
             emptyTools,
             5,      // maxIterations
