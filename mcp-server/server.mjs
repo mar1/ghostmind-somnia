@@ -52,11 +52,14 @@ if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) 
 const memoryGames = new Map();
 const memoryCache = new Map();
 
+// Contract address prefix for keys (change when redeploying)
+const CONTRACT_PREFIX = process.env.CONTRACT_PREFIX || 'v1';
+
 // Game storage abstraction
 const GameStore = {
   async get(gameId) {
     if (useRedis) {
-      const data = await redis.hgetall(`game:${gameId}`);
+      const data = await redis.hgetall(`${CONTRACT_PREFIX}:game:${gameId}`);
       if (!data || Object.keys(data).length === 0) return null;
       return {
         character: data.character,
@@ -70,14 +73,14 @@ const GameStore = {
 
   async set(gameId, game) {
     if (useRedis) {
-      await redis.hset(`game:${gameId}`, {
+      await redis.hset(`${CONTRACT_PREFIX}:game:${gameId}`, {
         character: game.character,
         difficulty: game.difficulty,
         questionCount: game.questionCount.toString(),
         createdAt: game.createdAt.toString()
       });
       // Set TTL: 7 days (au cas où)
-      await redis.expire(`game:${gameId}`, 604800);
+      await redis.expire(`${CONTRACT_PREFIX}:game:${gameId}`, 604800);
     } else {
       memoryGames.set(gameId, game);
     }
@@ -89,7 +92,7 @@ const GameStore = {
       for (const [key, value] of Object.entries(updates)) {
         updateData[key] = typeof value === 'number' ? value.toString() : value;
       }
-      await redis.hset(`game:${gameId}`, updateData);
+      await redis.hset(`${CONTRACT_PREFIX}:game:${gameId}`, updateData);
     } else {
       const game = memoryGames.get(gameId);
       if (game) {
@@ -100,14 +103,14 @@ const GameStore = {
 
   async has(gameId) {
     if (useRedis) {
-      return await redis.exists(`game:${gameId}`) === 1;
+      return await redis.exists(`${CONTRACT_PREFIX}:game:${gameId}`) === 1;
     }
     return memoryGames.has(gameId);
   },
 
   async count() {
     if (useRedis) {
-      const keys = await redis.keys('game:*');
+      const keys = await redis.keys(`${CONTRACT_PREFIX}:game:*`);
       return keys.length;
     }
     return memoryGames.size;
@@ -115,10 +118,10 @@ const GameStore = {
 
   async getAll() {
     if (useRedis) {
-      const keys = await redis.keys('game:*');
+      const keys = await redis.keys(`${CONTRACT_PREFIX}:game:*`);
       const games = [];
       for (const key of keys) {
-        const gameId = key.replace('game:', '');
+        const gameId = key.replace(`${CONTRACT_PREFIX}:game:`, '');
         const game = await this.get(gameId);
         if (game) games.push({ id: gameId, ...game });
       }
@@ -136,7 +139,7 @@ const GameStore = {
 const AnswerCache = {
   async get(key) {
     if (useRedis) {
-      return await redis.get(`cache:${key}`);
+      return await redis.get(`${CONTRACT_PREFIX}:cache:${key}`);
     }
     return memoryCache.get(key) || null;
   },
@@ -144,7 +147,7 @@ const AnswerCache = {
   async set(key, value) {
     if (useRedis) {
       // Cache for 1 hour
-      await redis.setex(`cache:${key}`, 3600, value);
+      await redis.setex(`${CONTRACT_PREFIX}:cache:${key}`, 3600, value);
     } else {
       memoryCache.set(key, value);
     }
@@ -595,7 +598,7 @@ app.delete('/admin/games/:gameId', requireAdmin, async (req, res) => {
   if (!exists) return res.status(404).json({ error: 'Not found' });
 
   if (useRedis) {
-    await redis.del(`game:${gameId}`);
+    await redis.del(`${CONTRACT_PREFIX}:game:${gameId}`);
   } else {
     memoryGames.delete(gameId);
   }
@@ -628,6 +631,7 @@ app.listen(PORT, async () => {
 📤 All responses: "ready", "yes", "no", "correct", "incorrect"
 
 💾 Storage: ${useRedis ? 'Redis (Upstash) ✅ persistent' : '⚠️  In-Memory (data lost on restart)'}
+🏷️  Prefix: ${CONTRACT_PREFIX}
 🤖 LLM: ${ANTHROPIC_API_KEY ? 'Anthropic Claude ✅' : OPENAI_API_KEY ? 'OpenAI GPT ✅' : '❌ NOT CONFIGURED'}
 🛡️  Admin: ${ADMIN_SECRET ? 'Protected ✅' : NODE_ENV === 'production' ? '❌ DISABLED (no secret)' : '⚠️  Open (dev mode)'}
 🌍 Env: ${NODE_ENV}
