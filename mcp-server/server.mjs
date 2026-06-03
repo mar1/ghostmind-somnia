@@ -325,9 +325,9 @@ async function executeTool(name, args) {
   // INIT: Pick character, store privately, return ONLY "ready"
   // ─────────────────────────────────────────────────────────────────────────
   if (action === 'init') {
-    // Check if game already exists (handle 3-agent subcommittee)
+    // Check if game already exists (handle subcommittee retries)
     if (await GameStore.has(gameId)) {
-      console.log(`   ♻️ Game already exists, returning existing character`);
+      console.log(`   ♻️ Game already exists, returning existing`);
       console.log(`   📤 Response: "ready" (character NOT included)`);
       return {
         content: [{

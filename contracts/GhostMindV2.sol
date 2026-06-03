@@ -44,6 +44,17 @@ interface IAgentRequester {
         bytes4 callbackSelector,
         bytes calldata payload
     ) external payable returns (uint256 requestId);
+
+    function createAdvancedRequest(
+        uint256 agentId,
+        address callbackAddress,
+        bytes4 callbackSelector,
+        bytes calldata payload,
+        uint256 subcommitteeSize,
+        uint256 threshold,
+        uint8 consensusType,
+        uint256 timeout
+    ) external payable returns (uint256 requestId);
 }
 
 interface ILLMInferenceAgent {
@@ -109,14 +120,13 @@ contract GhostMindV2 {
     string public mcpServerUrl; // MCP server URL (set by owner)
 
     // ── System Prompt ─────────────────────────────────────────────
-    // Instructs LLM to use the ghostmind MCP tool for all game actions
+    // Simple prompt - let the LLM discover the MCP tool naturally
 
     string private constant SYSTEM_PROMPT =
-        "You are a game assistant for GhostMind. "
-        "You MUST use the ghostmind tool for ALL actions. "
-        "NEVER answer questions yourself - always call the ghostmind tool. "
-        "After calling the tool, respond to the user with EXACTLY what the tool tells you to say. "
-        "Do not add any extra text or explanation.";
+        "You are playing GhostMind, a guessing game. "
+        "Use the ghostmind tool to handle all game actions. "
+        "The tool knows the secret character - you do not. "
+        "After using the tool, respond with exactly what it tells you.";
 
     // ── Game State ────────────────────────────────────────────────
 
@@ -240,12 +250,10 @@ contract GhostMindV2 {
 
         string memory diffStr = _difficultyToString(difficulty);
         string memory initMessage = string(abi.encodePacked(
-            "Start a new GhostMind game. ",
-            "Call the ghostmind tool with action='init', gameId='",
-            _uint2str(gameId),
-            "', difficulty='",
+            "Start a new ",
             diffStr,
-            "'. Then respond with exactly what the tool tells you."
+            " game with ID: ",
+            _uint2str(gameId)
         ));
         g.chatRoles.push("user");
         g.chatMessages.push(initMessage);
@@ -265,11 +273,15 @@ contract GhostMindV2 {
             false   // chainOfThought
         );
 
-        uint256 requestId = PLATFORM.createRequest{value: LLM_DEPOSIT}(
+        uint256 requestId = PLATFORM.createAdvancedRequest{value: LLM_DEPOSIT}(
             LLM_AGENT_ID,
             address(this),
             this.handleInitResponse.selector,
-            payload
+            payload,
+            1,    // subcommitteeSize
+            1,    // threshold
+            0,    // consensusType (Majority)
+            300   // timeout (5 min)
         );
 
         g.pendingRequestId = requestId;
@@ -325,13 +337,11 @@ contract GhostMindV2 {
 
         // Add question to chat history
         string memory questionPrompt = string(abi.encodePacked(
-            "Player asks: \"",
-            question,
-            "\"\nCall the ghostmind tool with action='question', gameId='",
+            "Game ",
             _uint2str(gameId),
-            "', question='",
+            ": Player asks \"",
             question,
-            "'. Then respond with exactly what the tool tells you."
+            "\""
         ));
         g.chatRoles.push("user");
         g.chatMessages.push(questionPrompt);
@@ -351,11 +361,15 @@ contract GhostMindV2 {
             false   // chainOfThought
         );
 
-        uint256 requestId = PLATFORM.createRequest{value: LLM_DEPOSIT}(
+        uint256 requestId = PLATFORM.createAdvancedRequest{value: LLM_DEPOSIT}(
             LLM_AGENT_ID,
             address(this),
             this.handleQuestionResponse.selector,
-            payload
+            payload,
+            1,    // subcommitteeSize
+            1,    // threshold
+            0,    // consensusType (Majority)
+            300   // timeout (5 min)
         );
 
         g.pendingRequestId = requestId;
@@ -383,7 +397,16 @@ contract GhostMindV2 {
             return;
         }
 
-        string memory rawAnswer = abi.decode(responses[0].result, (string));
+        // inferToolsChat returns (finishReason, response, updatedRoles, updatedMessages, ...)
+        // We need the second element (response), not the first (finishReason = "stop")
+        (
+            ,                           // finishReason (skip)
+            string memory rawAnswer,    // response (what we want)
+            ,                           // updatedRoles (skip)
+            ,                           // updatedMessages (skip)
+            ,                           // pendingToolCallIds (skip)
+                                        // pendingToolCalls (skip)
+        ) = abi.decode(responses[0].result, (string, string, string[], string[], string[], bytes[]));
         string memory answer = _coerceYesNo(rawAnswer);
 
         // Chat replay uses only yes/no so long LLM replies do not poison later turns
@@ -432,13 +455,11 @@ contract GhostMindV2 {
 
         // Add guess to chat history
         string memory guessPrompt = string(abi.encodePacked(
-            "Player guesses: \"",
-            guess,
-            "\"\nCall the ghostmind tool with action='guess', gameId='",
+            "Game ",
             _uint2str(gameId),
-            "', guess='",
+            ": Check if \"",
             guess,
-            "'. Then respond with exactly what the tool tells you."
+            "\" is the secret character"
         ));
         g.chatRoles.push("user");
         g.chatMessages.push(guessPrompt);
@@ -458,11 +479,15 @@ contract GhostMindV2 {
             false   // chainOfThought
         );
 
-        uint256 requestId = PLATFORM.createRequest{value: LLM_DEPOSIT}(
+        uint256 requestId = PLATFORM.createAdvancedRequest{value: LLM_DEPOSIT}(
             LLM_AGENT_ID,
             address(this),
             this.handleGuessResponse.selector,
-            payload
+            payload,
+            1,    // subcommitteeSize
+            1,    // threshold
+            0,    // consensusType (Majority)
+            300   // timeout (5 min)
         );
 
         g.pendingRequestId = requestId;
@@ -493,7 +518,16 @@ contract GhostMindV2 {
             return;
         }
 
-        string memory rawResult = abi.decode(responses[0].result, (string));
+        // inferToolsChat returns (finishReason, response, updatedRoles, updatedMessages, ...)
+        // We need the second element (response), not the first (finishReason = "stop")
+        (
+            ,                           // finishReason (skip)
+            string memory rawResult,    // response (what we want)
+            ,                           // updatedRoles (skip)
+            ,                           // updatedMessages (skip)
+            ,                           // pendingToolCallIds (skip)
+                                        // pendingToolCalls (skip)
+        ) = abi.decode(responses[0].result, (string, string, string[], string[], string[], bytes[]));
         string memory result = _coerceGuessResult(rawResult);
 
         g.chatRoles.push("assistant");
