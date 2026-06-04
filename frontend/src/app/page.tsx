@@ -255,7 +255,7 @@ export default function SeanceHall() {
                 Séance <span style={{ fontStyle: "italic", color: "var(--gm-spectral)" }}>Hall</span>
               </div>
               <div style={{ fontSize: 14, color: "var(--gm-muted)", marginTop: 6, fontStyle: "italic" }}>
-                Pick a round. Pay to ask. Name the ghost before twenty questions are spent.
+                Pick a round. Pay to ask. Name the ghost to claim the pot.
               </div>
             </div>
             <div style={{ display: "flex", gap: 10 }}>

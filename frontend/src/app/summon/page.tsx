@@ -140,7 +140,7 @@ export default function SummonPage() {
             }}
           >
             Seed a pot. Set a price for each question. The Oracle will pick a famous figure in secret and answer until
-            someone names them — or until twenty questions run out and the pot returns to you.
+            someone names them correctly.
           </div>
 
           <div style={{ marginTop: 36, display: "flex", flexDirection: "column", gap: 22, maxWidth: 560 }}>
@@ -388,7 +388,7 @@ in any transaction or receipt.`}
             <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
               {[
                 "The character's name is never written on-chain.",
-                "Twenty questions, then the pot returns to you.",
+                "Each question costs a fee that grows the pot.",
                 "Wrong guesses cost a fee and feed the pot.",
                 "Correct guess wins pot minus 3% offering.",
               ].map((t) => (

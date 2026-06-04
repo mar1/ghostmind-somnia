@@ -13,8 +13,7 @@ interface AppChromeProps {
 const tabs = [
   { name: "Séance Hall", href: "/" },
   { name: "Summon", href: "/summon" },
-  { name: "Active Round", href: "/game" },
-  { name: "Reveal", href: "/reveal" },
+  { name: "Reveals", href: "/reveal" },
   { name: "Rankings", href: "/leaderboard" },
 ];
 
