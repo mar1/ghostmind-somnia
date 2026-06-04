@@ -44,7 +44,9 @@ export function AppChrome({ children }: AppChromeProps) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 48 }}>
-          <Wordmark size={22} />
+          <Link href="/" style={{ textDecoration: "none" }}>
+            <Wordmark size={22} />
+          </Link>
           <nav style={{ display: "flex", gap: 6 }}>
             {tabs.map((t) => {
               const isActive =

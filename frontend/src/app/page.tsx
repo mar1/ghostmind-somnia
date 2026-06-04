@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { formatEther } from "viem";
 import { useAccount } from "wagmi";
@@ -7,6 +8,8 @@ import { AppChrome } from "@/components/AppChrome";
 import { Button, Badge, Icon, PhasePip } from "@/components/ui";
 import { useActiveGames, type GameSummary } from "@/hooks";
 import { GamePhase, LLM_DEPOSIT } from "@/contracts";
+
+type Filter = "all" | "open" | "high-pot" | "few-questions" | "your-rounds";
 
 // Helper to format address for display
 function formatAddr(addr: `0x${string}`): string {
@@ -215,9 +218,33 @@ function SidePanel({
 export default function SeanceHall() {
   const { address } = useAccount();
   const { games, isLoading, totalGames } = useActiveGames(20);
+  const [filter, setFilter] = useState<Filter>("all");
 
-  // Sort games by pot size (highest first)
-  const sortedGames = [...games].sort((a, b) => (b.pot > a.pot ? 1 : -1));
+  // Filter games based on selected filter
+  const filteredGames = games.filter((game) => {
+    switch (filter) {
+      case "open":
+        return game.phase === GamePhase.Active;
+      case "high-pot":
+        return true; // Will be sorted by pot
+      case "few-questions":
+        return true; // Will be sorted by questions
+      case "your-rounds":
+        return address?.toLowerCase() === game.gameMaster.toLowerCase();
+      default:
+        return true;
+    }
+  });
+
+  // Sort games based on filter
+  const sortedGames = [...filteredGames].sort((a, b) => {
+    if (filter === "few-questions") {
+      return Number(a.questionCount) - Number(b.questionCount);
+    }
+    // Default: sort by pot (highest first)
+    return b.pot > a.pot ? 1 : -1;
+  });
+
   const highestPot = sortedGames[0]?.pot;
 
   return (
@@ -272,25 +299,36 @@ export default function SeanceHall() {
 
           {/* Filter row */}
           <div style={{ display: "flex", gap: 6, marginBottom: 18 }}>
-            {["All", "Open", "High pot", "Few questions", "Your rounds"].map((f, i) => (
-              <span
-                key={f}
-                style={{
-                  fontSize: 12.5,
-                  padding: "6px 12px",
-                  borderRadius: 999,
-                  background: i === 0 ? "var(--gm-surface-2)" : "transparent",
-                  color: i === 0 ? "var(--gm-fg)" : "var(--gm-muted)",
-                  border: `1px solid ${i === 0 ? "var(--gm-border)" : "transparent"}`,
-                  cursor: "pointer",
-                }}
-              >
-                {f}
-              </span>
-            ))}
+            {[
+              { label: "All", value: "all" as Filter },
+              { label: "Open", value: "open" as Filter },
+              { label: "High pot", value: "high-pot" as Filter },
+              { label: "Few questions", value: "few-questions" as Filter },
+              { label: "Your rounds", value: "your-rounds" as Filter },
+            ].map((f) => {
+              const isActive = filter === f.value;
+              return (
+                <button
+                  key={f.value}
+                  onClick={() => setFilter(f.value)}
+                  style={{
+                    fontSize: 12.5,
+                    padding: "6px 12px",
+                    borderRadius: 999,
+                    background: isActive ? "var(--gm-surface-2)" : "transparent",
+                    color: isActive ? "var(--gm-fg)" : "var(--gm-muted)",
+                    border: `1px solid ${isActive ? "var(--gm-border)" : "transparent"}`,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
             <span style={{ flex: 1 }} />
             <span className="mono" style={{ fontSize: 11, color: "var(--gm-muted)", letterSpacing: "0.1em", alignSelf: "center" }}>
-              sort: hottest pot
+              sort: {filter === "few-questions" ? "fewest questions" : "hottest pot"}
             </span>
           </div>
 
