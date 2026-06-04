@@ -250,7 +250,6 @@ npm run dev
 |-----------|-------|
 | LLM Deposit | 0.24 STT |
 | Protocol Fee | 3% of winning pot |
-| Max Questions | 20 per game |
 | Timeout | 30 minutes (stuck recovery) |
 
 **Self-funding prize pools:** Every question and wrong guess grows the pot, creating natural engagement incentives.
