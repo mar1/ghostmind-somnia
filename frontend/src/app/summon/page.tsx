@@ -80,7 +80,7 @@ export default function SummonPage() {
     abi: ghostMindAbi,
     functionName: "gameCounter",
   });
-  const nextGameId = gameCounter !== undefined ? gameCounter + 1n : 1n;
+  const nextGameId = gameCounter !== undefined ? gameCounter + BigInt(1) : BigInt(1);
   const [poolSeed, setPoolSeed] = useState("2.40");
   const [questionFee, setQuestionFee] = useState("0.18");
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.Easy);
