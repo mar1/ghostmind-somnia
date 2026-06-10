@@ -97,6 +97,8 @@ GhostMind uses a hybrid approach where:
 
 **GhostMindV2.sol** — 656 lines of Solidity
 
+**Deployed (Somnia Testnet):** [`0x6291d4912cf13C67bbfdfDfF42fE941970E94326`](https://shannon-explorer.somnia.network/address/0x6291d4912cf13C67bbfdfDfF42fE941970E94326?tab=contract)
+
 - **Game Phases:** `NonExistent → Initializing → Active → Processing → Finished`
 - **Request Types:** `Init`, `Question`, `Guess`
 - **Callbacks:** Platform calls back with LLM responses
@@ -145,6 +147,7 @@ GameEnded(gameId, recipient, amount, reason)
 | Currency | STT | SOMI |
 | RPC | `https://api.infra.testnet.somnia.network` | `https://api.infra.mainnet.somnia.network` |
 | Platform | `0x037Bb9C718F3f7fe5eCBDB0b600D607b52706776` | `0x5E5205CF39E766118C01636bED000A54D93163E6` |
+| GhostMindV2 | `0x6291d4912cf13C67bbfdfDfF42fE941970E94326` | — |
 
 ### LLM Agent
 
@@ -217,7 +220,9 @@ ngrok http 3001
 # Note the https URL (e.g., https://abc123.ngrok.io)
 ```
 
-### 3. Deploy Contract
+### 3. Contract
+
+The canonical testnet deployment is [`0x6291...4326`](https://shannon-explorer.somnia.network/address/0x6291d4912cf13C67bbfdfDfF42fE941970E94326?tab=contract) (also in `frontend/src/contracts/addresses.ts`). To run your own instance:
 
 ```bash
 # Using your preferred deployment tool (Hardhat, Foundry, etc.)
@@ -273,6 +278,7 @@ npm run dev
 - [Somnia Testnet Faucet](https://testnet.somnia.network/)
 - [Somnia Agents (Testnet)](https://agents.testnet.somnia.network)
 - [Somnia Docs](https://docs.somnia.network/agents)
+- [GhostMindV2 Contract (Testnet)](https://shannon-explorer.somnia.network/address/0x6291d4912cf13C67bbfdfDfF42fE941970E94326?tab=contract)
 - [LLM Inference Agent](https://agents.testnet.somnia.network/agent/12847293847561029384)
 
 ## License
